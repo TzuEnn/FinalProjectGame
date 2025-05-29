@@ -1,8 +1,0 @@
-{
-	"terminal.integrated.env.windows": {
-		"PATH": "${workspaceFolder}\\..\\MinGW\\bin;${env:PATH}"
-	},
-	"files.associations": {
-		"tree.h": "c"
-	}
-}
