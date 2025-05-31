@@ -1,6 +1,9 @@
 #pragma once
 #include "ship.h"
 #include "resource.h"
+#include <allegro5/allegro_font.h>
+#include <allegro5/allegro_ttf.h>
+
 
 #define CELL_SIZE 48  // 放大格子尺寸
 #define GRID_WIDTH 30 // 水平格子数
@@ -50,16 +53,18 @@ typedef struct GameState{
     int ui_offset_x; // UI區域偏移量
     Ship* selected_ship;
     bool dragging;
+    int confirm_button_x;
+    int confirm_button_y;
 } GameState;
 
 
 void init_game(GameState* game);
-void draw_game(GameState* game, GameSprites* sprites);
+void draw_game(GameState* game, GameSprites* sprites, ALLEGRO_FONT* font);
 void handle_input(GameState* game, int mouse_x, int mouse_y);
 void handle_game_input(GameState* game, int grid_x, int grid_y);
 void handle_key_input(GameState* game, int keycode);
 bool check_victory(GameState* game);
-void draw_ui(GameState* game);
+void draw_ui(GameState* game, ALLEGRO_FONT* font);
 void move_all_suicide_boats(GameState* game, bool is_player);
 void execute_enemy_turn(GameState* game);    // 敵方回合
 void rotate_ship(GameState* game);          // 船艦旋轉
@@ -67,6 +72,9 @@ Ship* get_selected_ship(GameState* game);   // 獲取當前選中船隻
 
 Ship* select_ship_at(GameState* game, int grid_x, int grid_y);
 void move_selected_ship(GameState* game, int new_x, int new_y);
+bool check_all_ships_placed(GameState* game);
+void handle_setup_input(GameState* game, int mouse_x, int mouse_y);
+
 
 
 // 新增需要的函數聲明
@@ -79,7 +87,7 @@ void update_radar_effects(GameState* game);        // 更新雷達效果
 void update_turn(GameState* game);                 // 更新回合
 void handle_setup_input(GameState* game, int grid_x, int grid_y); // 處理佈置階段輸入
 void handle_game_input(GameState* game, int grid_x, int grid_y);   // 處理遊戲階段輸入
-void select_ship(GameState* game, int mouse_x, int mouse_y);       // 選擇船艦
+bool select_ship(GameState* game, int mouse_x, int mouse_y);       // 選擇船艦（回傳是否選中）
 void place_ship(GameState* game, int mouse_x, int mouse_y);        // 放置船艦
 
 // 敵方AI相關函數

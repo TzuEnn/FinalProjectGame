@@ -5,7 +5,7 @@
 
 //放照片用
 void load_resources(GameSprites* sprites) {
-    log_message("[调试] 当前工作目录：%s\n", al_get_current_directory());
+    log_message("[debug] 當前工作目錄：%s\n", al_get_current_directory());
     // 加载 carrier.png
     sprites->carrier = al_load_bitmap("assets/carrier.png");
     if (!sprites->carrier) {
@@ -21,6 +21,9 @@ void load_resources(GameSprites* sprites) {
     sprites->attack_miss = al_load_bitmap("assets/attack_miss.png");
     sprites->attack_hit = al_load_bitmap("assets/attack_hit.png");
     sprites->attack_sunk = al_load_bitmap("assets/attack_sunk.png");
+    if (!sprites->carrier) printf("[錯誤] 無法載入 carrier.png\n");
+    if (!sprites->factory) printf("[錯誤] 無法載入 factory.png\n");
+
 }
 
 void destroy_resources(GameSprites* sprites) {

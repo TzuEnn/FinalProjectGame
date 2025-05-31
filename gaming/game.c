@@ -4,6 +4,8 @@
 #include <allegro5/allegro_ttf.h>
 #include "game.h"
 #include "combat.h"
+#include <stdio.h>
+#include <stdbool.h>
 
 
 void init_game(GameState* game) {
@@ -69,6 +71,13 @@ void init_game(GameState* game) {
     game->setup_completed = false;
     game->light_cruiser_cooldown = 0;
     game->heavy_cruiser_cooldown = 0;
+
+    game->selected_ship = NULL;
+    game->dragging = false;
+
+    game->confirm_button_x = 645;  // 讓按鈕寬度 150 水平置中 (1440 - 150) / 2
+    game->confirm_button_y = 800; // 離底部 100 像素（你也可以調成更高或更低）900 - 100
+
 }
 
 void draw_grid(void) {
@@ -183,7 +192,7 @@ void draw_radar_overlay(GameState* game) {
 }
 
 
-void draw_game(GameState* game, GameSprites* sprites) {
+void draw_game(GameState* game, GameSprites* sprites, ALLEGRO_FONT* font) {
     al_clear_to_color(al_map_rgb(30, 30, 60));
     draw_grid();
     al_draw_line(0, 15 * CELL_SIZE, GRID_SIZE * CELL_SIZE, 15 * CELL_SIZE,
@@ -201,11 +210,16 @@ void draw_game(GameState* game, GameSprites* sprites) {
     }
 
     draw_attack_effects(game, sprites);
-    draw_ui(game);
+    draw_ui(game, font);
     al_flip_display();
 }
 
-void draw_ui(GameState* game) {
+void draw_ui(GameState* game, ALLEGRO_FONT* font) {
+    if (!font) {
+        printf("[錯誤] draw_ui 中 font 是 NULL，跳過繪製。\n");
+        return;
+    }
+
     int ui_x = GRID_WIDTH * CELL_SIZE + 20; // UI在網格右側
     int ui_y = 20;
     
@@ -215,44 +229,100 @@ void draw_ui(GameState* game) {
                             al_map_rgba(0, 0, 50, 200));
     
     // 顯示當前回合
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y, 0, "Turn: %d", game->current_turn);
     
     // 顯示當前選擇的攻擊類型
     const char* attack_names[] = {"Normal/Carrier", "Light Cruiser", "Heavy Cruiser"};
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 20, 0, "Attack: %s", attack_names[game->selected_attack_type]);
     
     // 顯示回合歸屬
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 40, 0, "%s Turn", game->is_player_turn ? "Player" : "Enemy");
     
     // 顯示兵工廠冷卻
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 60, 0, "Factory Cooldown: %d", game->factory_cooldown);
     
     // 顯示輕巡冷卻
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 80, 0, "Light Cruiser CD: %d", game->light_cruiser_cooldown);
     
     // 顯示重巡冷卻
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 100, 0, "Heavy Cruiser CD: %d", game->heavy_cruiser_cooldown);
     
     // 顯示累積攻擊次數
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 120, 0, "Light Attacks: %d/2", game->light_cruiser_attacks);
-    al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 255, 255),
+    al_draw_textf(font, al_map_rgb(255, 255, 255),
                  ui_x, ui_y + 140, 0, "Heavy Attacks: %d/2", game->heavy_cruiser_attacks);
-    
+             
+    // 繪製確認按鈕
+    if (game->setup_phase && !game->setup_completed) {
+        al_draw_filled_rectangle(
+            game->confirm_button_x, game->confirm_button_y,
+            game->confirm_button_x + 150, game->confirm_button_y + 50,
+            al_map_rgb(0, 200, 0)
+        );
+        al_draw_text(font, al_map_rgb(0, 0, 0),
+                     game->confirm_button_x + 75, game->confirm_button_y + 25,
+                     ALLEGRO_ALIGN_CENTER, "CONFIRM");
+    }
     // 顯示遊戲結束信息
     if (game->game_over) {
         const char* winner_text = (game->winner == 0) ? "Player Wins!" : "Enemy Wins!";
-        al_draw_textf(al_create_builtin_font(), al_map_rgb(255, 0, 0),
+        al_draw_textf(font, al_map_rgb(255, 0, 0),
                      GRID_SIZE*CELL_SIZE/2 - 50, GRID_SIZE*CELL_SIZE/2, 0, 
                      "%s\nPress R to restart", winner_text);
     }
 }
+// 確認是否所有船隻都已經被部署（判斷 x, y 是否有設定）
+bool check_all_ships_placed(GameState* game) {
+    for (int i = 0; i < MAX_SHIPS; i++) {
+        Ship* ship = &game->player_fleet[i];
+        if (ship->health > 0 && (ship->pos_x < 0 || ship->pos_y < 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 處理部署階段中的滑鼠點擊，包括按下確認鍵
+void handle_setup_input(GameState* game, int mouse_x, int mouse_y) {
+    // 先檢查是否點了確認鍵
+    if (!game->dragging) {
+        if (mouse_x >= game->confirm_button_x &&
+            mouse_x <= game->confirm_button_x + 150 &&
+            mouse_y >= game->confirm_button_y &&
+            mouse_y <= game->confirm_button_y + 50) {
+            
+            if (check_all_ships_placed(game)) {
+                game->setup_completed = true;
+                printf("[提示] 所有船艦已部署完畢，遊戲開始！\n");
+            } else {
+                printf("[警告] 尚有船艦未部署完畢，請完成後再確認。\n");
+            }
+            return;
+        }
+    }
+
+    // 玩家正在選擇船艦
+    if (game->selected_ship_index == -1) {
+        if (select_ship(game, mouse_x, mouse_y)) {
+            // 成功選到船，等下一次點擊再決定放置
+            printf("[提示] 選擇了船艦 %d\n", game->selected_ship_index);
+        }
+    } else {
+        // 第二次點擊：放置船
+        place_ship(game, mouse_x, mouse_y);
+        game->selected_ship_index = -1;  // 放好後取消選擇
+    }
+}
+
+
+
 
 void update_radar_effects(GameState* game) {
     // 重置雷達地圖
@@ -462,37 +532,26 @@ void handle_game_input(GameState* game, int grid_x, int grid_y) {
     }
 }
 
-void handle_setup_input(GameState* game, int mouse_x, int mouse_y) {
-    
-    if (game->selected_ship_index == -1) {
-        // 選擇船艦
-        select_ship(game, mouse_x, mouse_y);
-    } else {
-        // 放置船艦
-        place_ship(game, mouse_x, mouse_y);
-    }
-}
-
-void select_ship(GameState* game, int mouse_x, int mouse_y) {
+bool select_ship(GameState* game, int mouse_x, int mouse_y) {
     int grid_x = mouse_x / CELL_SIZE;
     int grid_y = mouse_y / CELL_SIZE;
-    
-        // ...檢查點擊位置...
-        for (int i = 0; i < MAX_SHIPS; i++) {
-            Ship* ship = &game->player_fleet[i];
-            if (ship->health > 0) {
-                // 根據方向計算船隻範圍
-                int ship_end_x = ship->pos_x + (ship->is_horizontal ? ship->size : 1);
-                int ship_end_y = ship->pos_y + (ship->is_horizontal ? 1 : ship->size);
-            
-                // 檢查點擊是否在船隻範圍內
-                if (grid_x >= ship->pos_x && grid_x < ship_end_x &&
-                    grid_y >= ship->pos_y && grid_y < ship_end_y) {
-                    game->selected_ship_index = i;
-                    return;
-                }
-        }   
+
+    for (int i = 0; i < MAX_SHIPS; i++) {
+        Ship* ship = &game->player_fleet[i];
+        if (ship->health > 0) {
+            int ship_end_x = ship->pos_x + (ship->is_horizontal ? ship->size : 1);
+            int ship_end_y = ship->pos_y + (ship->is_horizontal ? 1 : ship->size);
+
+            if (grid_x >= ship->pos_x && grid_x < ship_end_x &&
+                grid_y >= ship->pos_y && grid_y < ship_end_y) {
+                game->selected_ship_index = i;
+                game->dragging = true; // 加上拖曳狀態
+                return true;
+            }
+        }
     }
+
+    return false;
 }
 
 

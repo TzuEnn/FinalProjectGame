@@ -6,6 +6,9 @@
 #include "game.h"
 #include "resource.h"
 #include <stdarg.h>
+#include <allegro5/allegro_font.h>
+#include <allegro5/allegro_ttf.h>
+
 
 #define FPS 60
 
@@ -15,9 +18,13 @@ void log_message(const char* format, ...);
 void close_log(void);
 void pause_before_exit(void);
 
+
+
+
 // 全局变量
 ALLEGRO_DISPLAY* display = NULL;
 ALLEGRO_EVENT_QUEUE* event_queue = NULL;
+ALLEGRO_FONT* font = NULL;  // 全域宣告但不呼叫函式
 static FILE* log_file = NULL;
 
 // 日誌功能实现
@@ -67,6 +74,15 @@ int main() {
         close_log();
         return -1;
     }
+
+    al_init_font_addon(); // 初始化內建字型系統
+    al_init_ttf_addon();  // 初始化 TTF 字型支援
+    font = al_load_ttf_font("assets/font/pixel.ttf", 20, 0);
+    if (!font) {
+        fprintf(stderr, "無法載入字型：assets/font/pixel.ttf\n");
+        return -1;
+    }
+
 
     // 初始化插件和安裝設備
     al_install_keyboard();  // 先安裝鍵盤
@@ -136,6 +152,11 @@ int main() {
                     game.dragging = true;
                 }
                 handle_setup_input(&game, grid_x, grid_y);
+                // ✅ 檢查是否全部船艦都已部署完畢，設為完成
+                if (check_all_ships_placed(&game)) {
+                    game.setup_completed = true;
+                    printf("[提示] 所有船艦已部署完成，遊戲開始！\n");
+                }
             } else {
                 handle_game_input(&game, grid_x, grid_y);
             }
@@ -159,7 +180,7 @@ int main() {
         }
 
         if (redraw && al_is_event_queue_empty(event_queue)) {
-            draw_game(&game, &sprites);
+            draw_game(&game, &sprites, font);
             redraw = false;
         }
     }
@@ -170,5 +191,6 @@ int main() {
     al_destroy_display(display);
     al_destroy_event_queue(event_queue);
     pause_before_exit();
+    al_destroy_font(font);
     return 0;
 }
